@@ -1,0 +1,281 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Retro Arcade 5-in-1</title>
+    <style>
+        :root { --green: #4caf50; --dark: #1a1a1a; --gray: #333; }
+        body { margin: 0; background: var(--dark); color: white; font-family: sans-serif; overflow: hidden; touch-action: none; -webkit-user-select: none; }
+        #app { display: flex; flex-direction: column; align-items: center; height: 100vh; }
+        
+        .menu { display: flex; gap: 5px; padding: 10px; width: 100%; overflow-x: auto; border-bottom: 1px solid #444; justify-content: center; }
+        .menu-btn { background: var(--gray); border: 1px solid var(--green); color: white; padding: 8px 12px; border-radius: 5px; font-size: 12px; white-space: nowrap; }
+        .menu-btn:active { background: var(--green); }
+
+        .status-bar { margin: 5px; color: var(--green); font-weight: bold; height: 20px; font-size: 14px; }
+        canvas { background: #000; width: 90vw; height: 90vw; max-width: 380px; max-height: 380px; border: 2px solid #444; display: block; image-rendering: pixelated; }
+
+        .controls { margin-top: auto; padding-bottom: 15px; display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+        .ctrl-btn { width: 65px; height: 65px; background: var(--gray); border: 2px solid #555; color: white; border-radius: 15px; font-size: 24px; display: flex; align-items: center; justify-content: center; touch-action: none; }
+        .ctrl-btn:active { background: #555; transform: scale(0.95); }
+        #rot-btn { background: #444; border-color: var(--green); }
+    </style>
+</head>
+<body>
+
+<div id="app">
+    <div class="menu">
+        <button class="menu-btn" onclick="run('snake')">🐍 Змейка</button>
+        <button class="menu-btn" onclick="run('mines')">💣 Сапер</button>
+        <button class="menu-btn" onclick="run('ark')">🎾 Арканоид</button>
+        <button class="menu-btn" onclick="run('tetris')">🧱 Тетрис</button>
+        <button class="menu-btn" onclick="run('race')">🏎 Гонки</button>
+    </div>
+    
+    <div id="status" class="status-bar">Выберите игру</div>
+    <canvas id="gameCanvas"></canvas>
+    
+    <div class="controls">
+        <div></div><div class="ctrl-btn" onpointerdown="input('UP')">▲</div><div></div>
+        <div class="ctrl-btn" onpointerdown="input('LEFT')">◀</div>
+        <div class="ctrl-btn" id="rot-btn" onpointerdown="input('ROTATE')">↻</div>
+        <div class="ctrl-btn" onpointerdown="input('RIGHT')">▶</div>
+        <div></div><div class="ctrl-btn" onpointerdown="input('DOWN')">▼</div><div></div>
+    </div>
+</div>
+
+<script>
+const canvas = document.getElementById('gameCanvas');
+const ctx = canvas.getContext('2d');
+const status = document.getElementById('status');
+canvas.width = 400; canvas.height = 400;
+
+let game = null;
+
+// --- 1. ЗМЕЙКА ---
+const Snake = {
+    init() { this.body = [{x:10, y:10}]; this.dir = {x:0, y:-1}; this.food = {x:5, y:5}; this.score = 0; this.tick = 0; },
+    input(d) {
+        if(d==='UP' && this.dir.y===0) this.dir={x:0, y:-1}; if(d==='DOWN' && this.dir.y===0) this.dir={x:0, y:1};
+        if(d==='LEFT' && this.dir.x===0) this.dir={x:-1, y:0}; if(d==='RIGHT' && this.dir.x===0) this.dir={x:1, y:0};
+    },
+    update() {
+        if(++this.tick % 15 !== 0) return;
+        const head = {x: this.body[0].x + this.dir.x, y: this.body[0].y + this.dir.y};
+        if(head.x<0 || head.x>=20 || head.y<0 || head.y>=20 || this.body.some(b=>b.x===head.x && b.y===head.y)) return this.init();
+        this.body.unshift(head);
+        if(head.x === this.food.x && head.y === this.food.y) {
+            this.score++; this.food = {x: Math.floor(Math.random()*20), y: Math.floor(Math.random()*20)};
+        } else this.body.pop();
+        status.innerText = "Змейка | Счет: " + this.score;
+    },
+    draw() {
+        ctx.fillStyle = '#000'; ctx.fillRect(0,0,400,400);
+        ctx.fillStyle = 'red'; ctx.fillRect(this.food.x*20+2, this.food.y*20+2, 16, 16);
+        ctx.fillStyle = 'lime'; this.body.forEach(b => ctx.fillRect(b.x*20+1, b.y*20+1, 18, 18));
+    }
+};
+
+// --- 2. САПЕР ---
+const Mines = {
+    init() {
+        this.grid = Array(10).fill().map(() => Array(10).fill().map(() => ({m:0, o:0, f:0, n:0})));
+        this.first = true; status.innerText = "Сапер: Первый ход открывает поле";
+        canvas.onpointerdown = (e) => {
+            const rect = canvas.getBoundingClientRect();
+            const x = Math.floor((e.clientX - rect.left) / (rect.width/10));
+            const y = Math.floor((e.clientY - rect.top) / (rect.height/10));
+            let t = setTimeout(() => { this.grid[y][x].f = !this.grid[y][x].f; t=null; }, 400);
+            canvas.onpointerup = () => { if(t) { clearTimeout(t); this.click(x, y); } };
+        };
+    },
+    click(x, y) {
+        if(this.grid[y][x].f || this.grid[y][x].o) return;
+        if(this.first) {
+            let m = 0; while(m < 15) {
+                let rx = Math.floor(Math.random()*10), ry = Math.floor(Math.random()*10);
+                if(Math.abs(rx-x)>1 || Math.abs(ry-y)>1) { if(!this.grid[ry][rx].m) {this.grid[ry][rx].m=1; m++;} }
+            }
+            for(let i=0; i<10; i++) for(let j=0; j<10; j++) {
+                if(this.grid[i][j].m) continue;
+                for(let di=-1; di<=1; di++) for(let dj=-1; dj<=1; dj++) {
+                    let ni=i+di, nj=j+dj; if(ni>=0 && ni<10 && nj>=0 && nj<10 && this.grid[ni][nj].m) this.grid[i][j].n++;
+                }
+            }
+            this.first = false;
+        }
+        if(this.grid[y][x].m) { alert("БА-БАХ!"); this.init(); } else this.open(x, y);
+    },
+    open(x, y) {
+        if(x<0 || x>=10 || y<0 || y>=10 || this.grid[y][x].o) return;
+        this.grid[y][x].o = 1;
+        if(this.grid[y][x].n === 0) for(let di=-1; di<=1; di++) for(let dj=-1; dj<=1; dj++) this.open(x+dj, y+di);
+    },
+    update() {},
+    draw() {
+        ctx.fillStyle = '#111'; ctx.fillRect(0,0,400,400); ctx.textAlign = "center"; ctx.font = "20px Arial";
+        for(let y=0; y<10; y++) for(let x=0; x<10; x++) {
+            let c = this.grid[y][x]; ctx.fillStyle = c.o ? "#bbb" : "#444"; ctx.fillRect(x*40+1, y*40+1, 38, 38);
+            if(c.o && c.n>0) { ctx.fillStyle = "black"; ctx.fillText(c.n, x*40+20, y*40+28); }
+            if(c.f && !c.o) { ctx.fillStyle = "orange"; ctx.fillText("🚩", x*40+20, y*40+28); }
+        }
+    }
+};
+
+// --- 3. РАЗНООБРАЗНЫЙ АРКАНОИД ---
+const Ark = {
+    init(speedMult = 1) {
+        this.p = {x: 160, w: 80}; 
+        this.b = {x: 200, y: 300, dx: 3 * speedMult, dy: -3 * speedMult};
+        this.bricks = [];
+        this.score = 0;
+        this.speedMult = speedMult;
+        
+        // Создаем разноцветные кирпичи
+        const colors = ['#ff4d4d', '#ff944d', '#ffdb4d', '#94ff4d'];
+        for(let i=0; i<24; i++) {
+            let row = Math.floor(i/6);
+            this.bricks.push({
+                x: (i%6)*65+10, 
+                y: row*25+40, 
+                a: 1, 
+                c: colors[row] || 'white'
+            });
+        }
+        
+        status.innerText = "Арканоид | Скорость: x" + speedMult.toFixed(1);
+        canvas.onpointermove = (e) => {
+            const rect = canvas.getBoundingClientRect();
+            this.p.x = (e.clientX - rect.left) * (400/rect.width) - this.p.w/2;
+        };
+    },
+    update() {
+        this.b.x += this.b.dx; this.b.y += this.b.dy;
+        if(this.b.x<0 || this.b.x>400) this.b.dx *= -1; 
+        if(this.b.y<0) this.b.dy *= -1;
+        
+        // Отскок от платформы
+        if(this.b.y>380 && this.b.x > this.p.x && this.b.x < this.p.x+this.p.w) {
+            this.b.dy = -3 * this.speedMult;
+            // Добавляем немного влияния движения платформы на угол мяча
+            this.b.dx += (this.b.x - (this.p.x + this.p.w/2)) / 10;
+        }
+        
+        if(this.b.y>400) this.init(1); // Проигрыш - сброс скорости
+
+        this.bricks.forEach(r => { 
+            if(r.a && this.b.x>r.x && this.b.x<r.x+60 && this.b.y>r.y && this.b.y<r.y+20) { 
+                r.a=0; this.b.dy *= -1; this.score++;
+                status.innerText = "Арканоид | Очки: " + this.score;
+            } 
+        });
+
+        // Проверка: разбиты ли все кирпичи?
+        if(this.bricks.every(r => !r.a)) {
+            this.init(this.speedMult + 0.3); // Новый уровень с ускорением
+        }
+    },
+    draw() {
+        ctx.fillStyle = '#000'; ctx.fillRect(0,0,400,400);
+        ctx.fillStyle = 'cyan'; ctx.fillRect(this.p.x, 385, this.p.w, 10);
+        ctx.fillStyle = 'white'; ctx.beginPath(); ctx.arc(this.b.x, this.b.y, 6, 0, 7); ctx.fill();
+        this.bricks.forEach(r => { 
+            if(r.a) {
+                ctx.fillStyle = r.c;
+                ctx.fillRect(r.x, r.y, 60, 20);
+                // Блик на кирпиче для объема
+                ctx.fillStyle = 'rgba(255,255,255,0.3)';
+                ctx.fillRect(r.x, r.y, 60, 5);
+            } 
+        });
+    }
+};
+
+// --- 4. ТЕТРИС ---
+const Tetris = {
+    init() {
+        this.grid = Array(20).fill().map(() => Array(10).fill(0)); this.score = 0; this.tick = 0;
+        this.shapes = [[[1,1,1,1]], [[1,1],[1,1]], [[0,1,0],[1,1,1]], [[1,0,0],[1,1,1]], [[1,1,0],[0,1,1]]]; this.spawn();
+    },
+    spawn() { this.cur = { s: this.shapes[Math.floor(Math.random()*5)], x: 3, y: 0 }; if(this.collide(0,0)) this.init(); },
+    collide(ox, oy, ns = this.cur.s) {
+        return ns.some((row, y) => row.some((v, x) => {
+            let nx = this.cur.x+x+ox, ny = this.cur.y+y+oy;
+            return v && (nx<0 || nx>=10 || ny>=20 || (ny>=0 && this.grid[ny][nx]));
+        }));
+    },
+    input(d) {
+        if(d==='LEFT' && !this.collide(-1,0)) this.cur.x--; if(d==='RIGHT' && !this.collide(1,0)) this.cur.x++;
+        if(d==='DOWN' && !this.collide(0,1)) this.cur.y++;
+        if(d==='ROTATE') {
+            let rs = this.cur.s[0].map((_, i) => this.cur.s.map(row => row[i]).reverse());
+            if(!this.collide(0,0, rs)) this.cur.s = rs;
+        }
+    },
+    update() {
+        if(++this.tick % 30 !== 0) return;
+        if(!this.collide(0,1)) this.cur.y++;
+        else {
+            this.cur.s.forEach((row, y) => row.forEach((v, x) => { if(v) this.grid[this.cur.y+y][this.cur.x+x]=1; }));
+            this.grid = this.grid.filter(row => !row.every(v => v));
+            while(this.grid.length < 20) { this.grid.unshift(Array(10).fill(0)); this.score+=100; }
+            this.spawn();
+        }
+        status.innerText = "Тетрис | Счет: " + this.score;
+    },
+    draw() {
+        ctx.fillStyle = '#111'; ctx.fillRect(0,0,400,400);
+        this.grid.forEach((row, y) => row.forEach((v, x) => { if(v) { ctx.fillStyle = '#666'; ctx.fillRect(x*20+100, y*20, 19, 19); } }));
+        ctx.fillStyle = 'yellow'; this.cur.s.forEach((row, y) => row.forEach((v, x) => { if(v) ctx.fillRect((this.cur.x+x)*20+100, (this.cur.y+y)*20, 19, 19); }));
+    }
+};
+
+// --- 5. ГОНКИ ---
+const Racing = {
+    init() {
+        this.pX = 1; this.obs = []; this.score = 0; this.tick = 0;
+        this.roadOffset = 0; this.speed = 5;
+        status.innerText = "Гонки: Уворачивайся от красных!";
+    },
+    input(d) { if(d==='LEFT' && this.pX > 0) this.pX--; if(d==='RIGHT' && this.pX < 2) this.pX++; },
+    update() {
+        this.tick++;
+        this.roadOffset = (this.roadOffset + this.speed) % 80;
+        if(this.tick % Math.max(20, 50 - Math.floor(this.score/50)) === 0) {
+            this.obs.push({x: Math.floor(Math.random()*3), y: -60, color: 'red'});
+        }
+        this.obs.forEach(o => { o.y += this.speed; if(o.y > 320 && o.y < 380 && o.x === this.pX) this.init(); });
+        this.obs = this.obs.filter(o => o.y < 420);
+        this.score++;
+        if(this.score % 500 === 0) this.speed += 0.5;
+        status.innerText = "Гонки | Дистанция: " + Math.floor(this.score/5);
+    },
+    draw() {
+        ctx.fillStyle = '#222'; ctx.fillRect(0,0,400,400);
+        ctx.fillStyle = '#333'; ctx.fillRect(50, 0, 300, 400);
+        ctx.strokeStyle = '#fff'; ctx.setLineDash([30, 50]); ctx.lineDashOffset = -this.roadOffset;
+        ctx.lineWidth = 4; ctx.beginPath(); ctx.moveTo(150, 0); ctx.lineTo(150, 400); ctx.moveTo(250, 0); ctx.lineTo(250, 400); ctx.stroke(); ctx.setLineDash([]);
+        let px = this.pX * 100 + 75; ctx.fillStyle = 'cyan'; ctx.fillRect(px, 330, 50, 60);
+        ctx.fillStyle = '#000'; ctx.fillRect(px-2, 335, 5, 15); ctx.fillRect(px+47, 335, 5, 15); ctx.fillRect(px-2, 370, 5, 15); ctx.fillRect(px+47, 370, 5, 15);
+        this.obs.forEach(o => {
+            let ox = o.x * 100 + 75; ctx.fillStyle = o.color; ctx.fillRect(ox, o.y, 50, 60);
+            ctx.fillStyle = '#000'; ctx.fillRect(ox-2, o.y+5, 5, 15); ctx.fillRect(ox+47, o.y+5, 5, 15); ctx.fillRect(ox-2, o.y+40, 5, 15); ctx.fillRect(ox+47, o.y+40, 5, 15);
+        });
+    }
+};
+
+function run(t) {
+    canvas.onpointerdown = canvas.onpointermove = canvas.onpointerup = null;
+    if(t==='snake') game = Snake; if(t==='mines') game = Mines;
+    if(t==='ark') game = Ark; if(t==='tetris') game = Tetris;
+    if(t==='race') game = Racing;
+    game.init();
+}
+function input(d) { if(game && game.input) game.input(d); }
+function loop() { if(game) { game.update(); game.draw(); } requestAnimationFrame(loop); }
+loop();
+
+</script>
+</body>
+</html>
