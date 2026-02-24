@@ -1,0 +1,16 @@
+{
+  "short_name": "Arcade",
+  "name": "Retro Arcade Games",
+  "icons": [
+    {
+      "src": "icon.png",
+      "sizes": "512x512",
+      "type": "image/png"
+    }
+  ],
+  "start_url": "./index.html",
+  "display": "standalone",
+  "background_color": "#1a1a1a",
+  "theme_color": "#4caf50"
+}
+
